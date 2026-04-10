@@ -46,6 +46,14 @@ export async function POST(request: Request) {
             voice_id: voice || "alloy"
         });
 
+        // 1. Create the room explicitly with metadata so Agent knows context
+        await roomService.createRoom({
+            name: roomName,
+            metadata: metadata,
+            emptyTimeout: 10 * 60, // 10 minutes
+        });
+
+        // 2. Create the SIP participant
         const info = await sipClient.createSipParticipant(
             trunkId,
             phoneNumber,
@@ -53,7 +61,7 @@ export async function POST(request: Request) {
             {
                 participantIdentity: particpantIdentity,
                 participantName: "Customer",
-                roomMetadata: metadata, // Pass metadata so Agent knows context
+                participantMetadata: metadata, // Also pass metadata to participant
             }
         );
 

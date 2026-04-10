@@ -25,8 +25,8 @@ export default function Home() {
           </div>
 
           <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight">
-            <span className="text-white">Rapid X</span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"> AI</span>
+            <span className="text-white">Advaita</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"> Voice AI</span>
           </h1>
           <p className="text-xl text-gray-400 max-w-2xl mx-auto font-light leading-relaxed">
             Next-Gen Voice Agent Orchestration.
@@ -38,15 +38,8 @@ export default function Home() {
           <BulkDialer />
         </div>
 
-        <footer className="text-sm text-gray-500 animate-in fade-in duration-1000 delay-500 text-center space-y-2">
-          <p>Powered by <span className="text-white font-semibold">Rapid X AI</span></p>
-          <div className="flex gap-4 justify-center text-xs">
-            <a href="https://instagram.com/ai.w.raj" target="_blank" className="hover:text-pink-400 transition-colors">Instagram: @ai.w.raj</a>
-            <span className="text-gray-700">|</span>
-            <a href="https://x.com/topR9595" target="_blank" className="hover:text-blue-400 transition-colors">X: @topR9595</a>
-            <span className="text-gray-700">|</span>
-            <a href="https://youtube.com/@ShreyasRaj" target="_blank" className="hover:text-red-400 transition-colors">YouTube: Shreyas Raj</a>
-          </div>
+        <footer className="text-sm text-gray-500 animate-in fade-in duration-1000 delay-500 text-center">
+          <p>Powered by <span className="text-white font-semibold">Advaita Voice AI</span></p>
         </footer>
       </div>
     </main>

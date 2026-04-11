@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sipClient, roomService, agentDispatchClient } from '@/lib/server-utils';
+import { roomService, agentDispatchClient } from '@/lib/server-utils';
 
 export async function POST(request: Request) {
     try {
@@ -10,74 +10,35 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
         }
 
-        const trunkId = process.env.VOBIZ_SIP_TRUNK_ID;
-        if (!trunkId) {
-            console.error("VOBIZ_SIP_TRUNK_ID is missing in env");
-            return NextResponse.json({ error: "SIP Trunk not configured" }, { status: 500 });
-        }
-
         // Generate a unique room name for this call
         const roomName = `call-${phoneNumber.replace(/\+/g, '')}-${Math.floor(Math.random() * 10000)}`;
-        const particpantIdentity = `sip_${phoneNumber}`;
-
-        console.log(`Dispatching call to ${phoneNumber} in room ${roomName} via trunk ${trunkId}`);
-
-        // Create the SIP Participant
-        // This triggers the SIP Trunk to dial the number and connect it to the room.
-        // The Agent (running separately) will join this room when it sees the job/room creation.
-        // Wait... for Explicit Dispatch (Job), we usually use the AgentDispatchClient or just rely on the Agent watching all rooms.
-        // 
-        // BUT, for Outbound calling, the flow is:
-        // 1. Create a Room (implicitly done by creating participant)
-        // 2. Add SIP Participant to Room.
-        // 3. The Agent (configured to join rooms) joins.
-
-        // HOWEVER, standard LiveKit Agent flow often uses a "Job" dispatch for explicit assignment.
-        // The `agent.py` provided listens for creating rooms? No, it's a Worker.
-        // `make_call.py` (which we are replacing) logic was:
-        //  api.create_sip_participant(...)
-        //
-        // So we just replicate `make_call.py` logic here.
 
         const metadata = JSON.stringify({
             phone_number: phoneNumber,
             user_prompt: prompt || "",
-            model_provider: modelProvider || "openai",
+            model_provider: modelProvider || "groq",
             voice_id: voice || "alloy",
-            dialed_externally: true, // Dashboard creates SIP participant — agent must NOT dial again
         });
 
-        // 1. Create the room explicitly with metadata so Agent knows context
+        console.log(`Dispatching call to ${phoneNumber} in room ${roomName}`);
+
+        // 1. Create the room with metadata so the agent knows the context
         await roomService.createRoom({
             name: roomName,
             metadata: metadata,
             emptyTimeout: 10 * 60, // 10 minutes
         });
 
-        // 2. Explicitly dispatch the AI agent to the room BEFORE dialing.
-        // This ensures the agent is in the room and ready when the call is answered.
-        // 'outbound-caller' must match the agent_name in agent.py WorkerOptions.
+        // 2. Dispatch the AI agent — the agent will read phone_number from metadata and dial.
+        //    The agent is the ONLY entity that places the SIP call, preventing double-dialing.
         await agentDispatchClient.createDispatch(roomName, 'outbound-caller', {
             metadata: metadata,
         });
-        console.log(`Agent dispatched to room ${roomName}`);
-
-        // 3. Create the SIP participant (this actually dials the phone number)
-        const info = await sipClient.createSipParticipant(
-            trunkId,
-            phoneNumber,
-            roomName,
-            {
-                participantIdentity: particpantIdentity,
-                participantName: "Customer",
-                participantMetadata: metadata,
-            }
-        );
+        console.log(`Agent dispatched to room ${roomName} — agent will dial ${phoneNumber}`);
 
         return NextResponse.json({
             success: true,
             roomName,
-            dispatchId: info.sipCallId
         });
 
     } catch (error: any) {

@@ -211,37 +211,35 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"Connecting to room: {ctx.room.name}")
 
     # Parse phone number and config from metadata.
+    # Job metadata is the primary source (set by dashboard dispatch).
+    # Room metadata is a fallback / additional config source.
     phone_number = None
     config_dict = {}
 
-    # Job metadata is always available and reliable (even in Docker subprocesses).
-    # Room metadata can have timing/propagation issues in production — don't rely on it alone.
     try:
         if ctx.job.metadata:
             data = json.loads(ctx.job.metadata)
             phone_number = data.get("phone_number")
             config_dict = data
+            logger.info(f"Job metadata loaded: phone={phone_number}")
     except Exception:
         pass
 
-    # Room metadata: merge extra config if available, but don't use it for dial decision.
     try:
         if ctx.room.metadata:
             data = json.loads(ctx.room.metadata)
-            config_dict.update(data)  # Merge, but don't override phone_number source
+            config_dict.update(data)
+            if not phone_number and data.get("phone_number"):
+                phone_number = data.get("phone_number")
     except Exception:
         logger.warning("No valid JSON metadata found in Room.")
 
-    # dialed_externally=True means the dashboard already called createSipParticipant.
-    # Agent must NOT dial again. This flag is set in both job and room metadata by route.ts.
-    dashboard_dispatched = bool(config_dict.get("dialed_externally", False))
-
-    logger.info(f"Phone: {phone_number} | Dashboard-dispatched: {dashboard_dispatched}")
+    logger.info(f"Phone: {phone_number} | Provider: {config_dict.get('model_provider', 'default')}")
 
     # Initialize function context
     fnc_ctx = TransferFunctions(ctx, phone_number)
 
-    # Initialize the Agent Session with plugins
+    # Initialize the Agent Session
     session = AgentSession(
         vad=silero.VAD.load(),
         stt=deepgram.STT(model=config.STT_MODEL, language=config.STT_LANGUAGE),
@@ -249,7 +247,6 @@ async def entrypoint(ctx: agents.JobContext):
         tts=_build_tts(config_dict.get("model_provider"), config_dict.get("voice_id")),
     )
 
-    # Start the session
     await session.start(
         room=ctx.room,
         agent=OutboundAssistant(tools=list(fnc_ctx.function_tools.values())),
@@ -259,15 +256,9 @@ async def entrypoint(ctx: agents.JobContext):
         ),
     )
 
-    if dashboard_dispatched:
-        # Dashboard already called createSipParticipant — DO NOT dial again.
-        # Just wait for the customer to pick up and greet them.
-        logger.info("Dashboard-dispatched call: skipping agent dial-out, waiting for customer to join and greeting.")
-        await session.generate_reply(instructions=config.INITIAL_GREETING)
-
-    elif phone_number:
-        # Legacy path (make_call.py / direct job dispatch): agent is responsible for dialing.
-        logger.info(f"Legacy path: agent initiating outbound SIP call to {phone_number}...")
+    if phone_number:
+        # Agent is the sole dialer — dashboard only creates the room and dispatches.
+        logger.info(f"Placing outbound SIP call to {phone_number}...")
         try:
             await ctx.api.sip.create_sip_participant(
                 api.CreateSIPParticipantRequest(
@@ -278,14 +269,13 @@ async def entrypoint(ctx: agents.JobContext):
                     wait_until_answered=True,
                 )
             )
-            logger.info("Call answered! Agent is now listening.")
+            logger.info("Call answered! Sending greeting.")
             await session.generate_reply(instructions=config.INITIAL_GREETING)
         except Exception as e:
             logger.error(f"Failed to place outbound call: {e}")
             ctx.shutdown()
-
     else:
-        # Inbound / no phone number: just greet whoever is there.
+        # Inbound / no phone number
         logger.info("No phone number in metadata — greeting as inbound call.")
         await session.generate_reply(instructions=config.fallback_greeting)
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sipClient, roomService } from '@/lib/server-utils';
+import { sipClient, roomService, agentDispatchClient } from '@/lib/server-utils';
 
 export async function POST(request: Request) {
     try {
@@ -53,7 +53,15 @@ export async function POST(request: Request) {
             emptyTimeout: 10 * 60, // 10 minutes
         });
 
-        // 2. Create the SIP participant
+        // 2. Explicitly dispatch the AI agent to the room BEFORE dialing.
+        // This ensures the agent is in the room and ready when the call is answered.
+        // 'outbound-caller' must match the agent_name in agent.py WorkerOptions.
+        await agentDispatchClient.createDispatch(roomName, 'outbound-caller', {
+            metadata: metadata,
+        });
+        console.log(`Agent dispatched to room ${roomName}`);
+
+        // 3. Create the SIP participant (this actually dials the phone number)
         const info = await sipClient.createSipParticipant(
             trunkId,
             phoneNumber,
@@ -61,7 +69,7 @@ export async function POST(request: Request) {
             {
                 participantIdentity: particpantIdentity,
                 participantName: "Customer",
-                participantMetadata: metadata, // Also pass metadata to participant
+                participantMetadata: metadata,
             }
         );
 

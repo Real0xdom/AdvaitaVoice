@@ -211,12 +211,11 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"Connecting to room: {ctx.room.name}")
 
     # Parse phone number and config from metadata.
-    # We track WHERE the phone_number came from to decide who dials.
     phone_number = None
     config_dict = {}
-    dashboard_dispatched = False  # True = dashboard already dialed via createSipParticipant
 
-    # Check Job Metadata (Legacy / make_call.py path — agent must dial)
+    # Job metadata is always available and reliable (even in Docker subprocesses).
+    # Room metadata can have timing/propagation issues in production — don't rely on it alone.
     try:
         if ctx.job.metadata:
             data = json.loads(ctx.job.metadata)
@@ -225,16 +224,17 @@ async def entrypoint(ctx: agents.JobContext):
     except Exception:
         pass
 
-    # Check Room Metadata (Dashboard / route.ts path — dashboard already dialed)
+    # Room metadata: merge extra config if available, but don't use it for dial decision.
     try:
         if ctx.room.metadata:
             data = json.loads(ctx.room.metadata)
-            if data.get("phone_number"):
-                phone_number = data.get("phone_number")
-                dashboard_dispatched = True  # Dashboard set this → it already called createSipParticipant
-            config_dict.update(data)
+            config_dict.update(data)  # Merge, but don't override phone_number source
     except Exception:
         logger.warning("No valid JSON metadata found in Room.")
+
+    # dialed_externally=True means the dashboard already called createSipParticipant.
+    # Agent must NOT dial again. This flag is set in both job and room metadata by route.ts.
+    dashboard_dispatched = bool(config_dict.get("dialed_externally", False))
 
     logger.info(f"Phone: {phone_number} | Dashboard-dispatched: {dashboard_dispatched}")
 

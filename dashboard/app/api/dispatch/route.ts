@@ -43,7 +43,8 @@ export async function POST(request: Request) {
             phone_number: phoneNumber,
             user_prompt: prompt || "",
             model_provider: modelProvider || "openai",
-            voice_id: voice || "alloy"
+            voice_id: voice || "alloy",
+            dialed_externally: true, // Dashboard creates SIP participant — agent must NOT dial again
         });
 
         // 1. Create the room explicitly with metadata so Agent knows context

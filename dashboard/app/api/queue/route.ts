@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { roomService, sipClient } from '@/lib/server-utils';
+import { roomService, agentDispatchClient } from '@/lib/server-utils';
 
 export async function POST(request: Request) {
     try {
@@ -10,45 +10,36 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "List of phone numbers is required" }, { status: 400 });
         }
 
-        const trunkId = process.env.VOBIZ_SIP_TRUNK_ID;
-        if (!trunkId) {
-            return NextResponse.json({ error: "SIP Trunk not configured" }, { status: 500 });
-        }
-
         const results = [];
 
-        // Process casually to avoid rate limits (simple queue)
-        // In a real production environment, push these to a Redis queue like BullMQ
         for (const phoneNumber of numbers) {
             try {
                 const roomName = `call-${phoneNumber.replace(/\+/g, '')}-${Math.floor(Math.random() * 10000)}`;
-                const particpantIdentity = `sip_${phoneNumber}`;
 
                 const metadata = JSON.stringify({
                     phone_number: phoneNumber,
-                    user_prompt: prompt || ""
+                    user_prompt: prompt || "",
+                    model_provider: "groq",
+                    voice_id: "alloy",
                 });
 
+                // 1. Create the room
                 await roomService.createRoom({
                     name: roomName,
                     metadata: metadata,
                     emptyTimeout: 60 * 5,
                 });
 
-                const info = await sipClient.createSipParticipant(
-                    trunkId,
-                    phoneNumber,
-                    roomName,
-                    {
-                        participantIdentity: particpantIdentity,
-                        participantName: "Customer",
-                    }
-                );
+                // 2. Dispatch agent — agent will read phone_number and place the SIP call.
+                //    Agent is the sole dialer to prevent double-calling.
+                await agentDispatchClient.createDispatch(roomName, 'outbound-caller', {
+                    metadata: metadata,
+                });
 
-                results.push({ phoneNumber, status: 'dispatched', id: info.sipCallId });
+                results.push({ phoneNumber, status: 'dispatched', roomName });
 
-                // Artificial delay to prevent API flooding (200ms)
-                await new Promise(r => setTimeout(r, 200));
+                // Prevent API flooding between numbers
+                await new Promise(r => setTimeout(r, 500));
 
             } catch (e: any) {
                 console.error(`Failed to dispatch ${phoneNumber}:`, e);

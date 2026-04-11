@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Phone, MessageSquare, Loader2, Sparkles } from 'lucide-react';
 
 export default function CallDispatcher() {
@@ -8,9 +8,12 @@ export default function CallDispatcher() {
     const [prompt, setPrompt] = useState('');
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
+    const isSubmitting = useRef(false); // Hard guard against double-submission
 
     const handleDispatch = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting.current) return; // Block concurrent calls
+        isSubmitting.current = true;
         setStatus('loading');
         setMessage('');
 
@@ -37,6 +40,8 @@ export default function CallDispatcher() {
         } catch (err: any) {
             setStatus('error');
             setMessage(err.message || 'Network error');
+        } finally {
+            isSubmitting.current = false;
         }
     };
 
